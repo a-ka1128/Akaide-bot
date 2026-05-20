@@ -1,0 +1,81 @@
+# =================================================================
+# 운영(production) 프로파일.
+# 모든 시크릿은 환경변수로만 주입한다. 이 파일에는 평문 비밀이 없으므로
+# git 에 올라가도 안전하다.
+#
+# 실행: java -jar bot.jar --spring.profiles.active=prod
+#       (환경변수 DISCORD_BOT_TOKEN, DB_PASSWORD 등을 미리 export)
+# =================================================================
+
+discord:
+  bot:
+    token: ${DISCORD_BOT_TOKEN}
+    admin-id: ${DISCORD_ADMIN_ID}
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/akaide_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:akaide}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      # 운영에서는 스키마를 자동 변경하지 않음. 컬럼이 실수로 사라지는 사고 방지.
+      # 최초 1회는 update 로 테이블을 만든 뒤 validate 로 고정하는 것을 권장.
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  # OAuth2 - Discord
+  security:
+    oauth2:
+      client:
+        registration:
+          discord:
+            client-id: ${DISCORD_CLIENT_ID}
+            client-secret: ${DISCORD_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - identify
+              - email
+            client-name: Discord
+        provider:
+          discord:
+            authorization-uri: https://discord.com/oauth2/authorize
+            token-uri: https://discord.com/api/oauth2/token
+            user-info-uri: https://discord.com/api/users/@me
+            user-name-attribute: id
+
+google:
+  client:
+    id: ${GOOGLE_CLIENT_ID}
+    secret: ${GOOGLE_CLIENT_SECRET}
+  redirect:
+    uri: ${GOOGLE_REDIRECT_URI:https://YOUR_DOMAIN/api/oauth2/callback}
+
+app:
+  jwt:
+    # 운영용 시크릿은 반드시 환경변수로! (개발 기본값 사용 금지)
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:604800000}
+  frontend:
+    # Firebase Hosting 도메인 등. OAuth2 로그인 성공 후 토큰을 들고 갈 곳.
+    redirect-uri: ${FRONTEND_REDIRECT_URI:https://YOUR_PROJECT.web.app/oauth/callback}
+  cors:
+    # 쉼표로 구분된 허용 origin 목록. 예: https://akaide.web.app,https://akaide.firebaseapp.com
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://YOUR_PROJECT.web.app}
+
+# 운영 로그 레벨 — 너무 시끄럽지 않게
+logging:
+  level:
+    root: INFO
+    com.akaide.bot: INFO
+    org.hibernate.SQL: WARN

@@ -1,0 +1,61 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Akaide Secrets ###
+# 시크릿이 들어가는 파일/폴더는 커밋 금지
+application-local.yml
+application-*.yml
+!application.yml
+!application-local.yml.example
+# application-prod.yml 은 평문 시크릿이 없고 모두 환경변수 참조라 커밋 허용
+!application-prod.yml
+tokens/
+src/main/resources/credentials.json
+**/credentials.json
+**/client_secret*.json
+*.pem
+*.key
+.env
+.env.local
+.env.*
+
+### Integrated build artifacts ###
+# 통합 빌드 시 AkaideWeb/dist 가 여기로 복사되므로 git에 올리지 않음.
+# .gitkeep 만 유지해서 빈 폴더가 git에 남게 함.
+src/main/resources/static/*
+!src/main/resources/static/.gitkeep

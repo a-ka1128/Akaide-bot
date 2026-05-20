@@ -1,0 +1,68 @@
+# =================================================================
+# application-local.yml 예시 파일.
+# 이 파일을 복사해 "application-local.yml" 로 이름을 바꾸고 값을 채워서 사용하세요.
+# 실제 application-local.yml 은 .gitignore 로 git 제외 처리됩니다.
+# =================================================================
+
+discord:
+  bot:
+    token: ${DISCORD_BOT_TOKEN:여기에_봇_토큰}
+    admin-id: ${DISCORD_ADMIN_ID:여기에_관리자_DISCORD_ID}
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:여기에_GEMINI_API_KEY}
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/akaide_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:여기에_DB_비밀번호}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# Google Calendar OAuth2 (봇 → 구글 캘린더 연동)
+google:
+  client:
+    id: ${GOOGLE_CLIENT_ID:여기에_GOOGLE_CLIENT_ID}
+    secret: ${GOOGLE_CLIENT_SECRET:여기에_GOOGLE_CLIENT_SECRET}
+  redirect:
+    uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/oauth2/callback}
+
+# 웹 대시보드 인증 — Discord OAuth2 + JWT
+spring.security.oauth2.client:
+  registration:
+    discord:
+      client-id: ${DISCORD_CLIENT_ID:여기에_DISCORD_CLIENT_ID}
+      client-secret: ${DISCORD_CLIENT_SECRET:여기에_DISCORD_CLIENT_SECRET}
+      authorization-grant-type: authorization_code
+      redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+      scope:
+        - identify
+        - email
+      client-name: Discord
+  provider:
+    discord:
+      authorization-uri: https://discord.com/oauth2/authorize
+      token-uri: https://discord.com/api/oauth2/token
+      user-info-uri: https://discord.com/api/users/@me
+      user-name-attribute: id
+
+app:
+  jwt:
+    # 256bit 이상의 충분히 긴 문자열. 운영에서는 환경변수로!
+    secret: ${JWT_SECRET:akaide-dev-secret-key-must-be-at-least-32-bytes-long-please}
+    # 토큰 만료 시간 (밀리초). 기본 7일.
+    expiration-ms: 604800000
+  frontend:
+    # OAuth2 로그인 성공 후 리다이렉트할 URL.
+    # 개발 모드: http://localhost:5173/oauth/callback
+    # 통합 빌드 모드: http://localhost:8080/oauth/callback
+    redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth/callback}
