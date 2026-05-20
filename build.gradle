@@ -51,16 +51,24 @@ tasks.named('test') {
 
 // =================================================================
 // 프론트엔드(AkaideWeb) 빌드 결과를 정적 리소스로 포함
+//
+// AkaideWeb 폴더가 있을 때(= 로컬 통합 빌드)만 웹 빌드/복사를 수행한다.
+// 서버(VM)처럼 AkaideWeb 폴더가 없는 환경에서는 봇만 빌드되도록 자동 스킵.
+// 강제로 끄려면 -PskipWeb 옵션을 줄 수도 있다.
 // =================================================================
 
 def webDir = file("${project.projectDir}/../AkaideWeb")
 def staticDir = file("${project.projectDir}/src/main/resources/static")
+def webPresent = webDir.exists() && !project.hasProperty('skipWeb')
 
 /** npm run build 실행 */
 tasks.register('buildWeb', Exec) {
 	group = 'web'
 	description = 'AkaideWeb(npm)을 빌드합니다.'
-	workingDir = webDir
+	onlyIf { webPresent }
+	if (webPresent) {
+		workingDir = webDir
+	}
 	// Windows에서는 npm 이 npm.cmd 로 인식돼야 함
 	def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
 	commandLine isWindows ? ['cmd', '/c', 'npm', 'run', 'build'] : ['npm', 'run', 'build']
@@ -70,6 +78,7 @@ tasks.register('buildWeb', Exec) {
 tasks.register('copyWeb', Copy) {
 	group = 'web'
 	description = 'AkaideWeb 빌드 결과를 정적 리소스로 복사합니다.'
+	onlyIf { webPresent }
 	dependsOn 'buildWeb'
 
 	from "${webDir}/dist"
@@ -82,7 +91,9 @@ tasks.register('copyWeb', Copy) {
 	}
 }
 
-/** Spring Boot 빌드 전에 자동으로 웹 빌드 수행 */
+/** Spring Boot 빌드 전에, 웹 폴더가 있으면 웹 빌드 수행 */
 tasks.named('processResources') {
-	dependsOn 'copyWeb'
+	if (webPresent) {
+		dependsOn 'copyWeb'
+	}
 }
