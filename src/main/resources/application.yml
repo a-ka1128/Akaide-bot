@@ -1,3 +1,10 @@
 spring:
   profiles:
     active: local
+  task:
+    scheduling:
+      # @Scheduled 작업용 스레드 풀.
+      # 매분 알림(checkSchedules)과 10분 주기 구글 동기화(importFromGoogleCalendar)가
+      # 같은 단일 스레드에서 돌면 동기화가 느릴 때 알림이 밀릴 수 있어 풀을 분리한다.
+      pool:
+        size: 3

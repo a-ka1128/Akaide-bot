@@ -71,7 +71,8 @@ public class DiscordBotListener extends ListenerAdapter {
 
     private void showDaySchedule(SlashCommandInteractionEvent event, java.time.LocalDate date, String label) {
         event.deferReply().queue();
-        List<Schedule> dbList = scheduleService.getSchedulesForDate(date);
+        // 본인 일정만 조회 (다른 사용자 일정 노출 방지)
+        List<Schedule> dbList = scheduleService.getSchedulesForDate(date, event.getUser().getId());
         var googleList = scheduleService.getGoogleEventsForDate(event.getUser().getId(), date);
         event.getHook().sendMessageEmbeds(
                 embedService.createDayScheduleEmbed(label, date, dbList, googleList)
@@ -203,7 +204,8 @@ public class DiscordBotListener extends ListenerAdapter {
         else if (dayInput.equals("주말")) targetDays.addAll(List.of("SATURDAY", "SUNDAY"));
         else targetDays.add(convertToDayOfWeek(dayInput));
 
-        for (String day : targetDays) activeTimeRepository.save(new ActiveTime(day, start, end));
+        String userId = event.getUser().getId();
+        for (String day : targetDays) activeTimeRepository.save(new ActiveTime(userId, day, start, end));
         event.reply("📅 **" + dayInput + "** 활동 시간이 **" + start + "시 ~ " + end + "시**로 설정되었습니다.").queue();
     }
 
@@ -216,7 +218,8 @@ public class DiscordBotListener extends ListenerAdapter {
     }
 
     private void showScheduleList(SlashCommandInteractionEvent event) {
-        List<Schedule> list = scheduleRepository.findAll();
+        // 본인 일정만 조회 (다른 사용자 일정 노출 방지)
+        List<Schedule> list = scheduleRepository.findAllByUserId(event.getUser().getId());
         if (list.isEmpty()) { event.reply("📭 저장된 일정이 없습니다.").queue(); return; }
         event.replyEmbeds(embedService.createScheduleListEmbed(list)).queue();
     }
@@ -253,7 +256,8 @@ public class DiscordBotListener extends ListenerAdapter {
         }
 
         try {
-            scheduleService.deleteScheduleByKeyword(keywordOpt.getAsString());
+            // 본인 일정만 삭제 (다른 사용자 일정 삭제 방지)
+            scheduleService.deleteScheduleByKeyword(keywordOpt.getAsString(), event.getUser().getId());
             event.reply("🗑️ 삭제 완료").queue();
         } catch (Exception e) {
             event.reply("❌ 오류가 발생했습니다.").setEphemeral(true).queue();

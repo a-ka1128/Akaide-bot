@@ -40,4 +40,16 @@ public class Schedule {
     private boolean notified1h;  // 알림 발송 여부
 
     private LocalDateTime completedAt; // ✅ 사용자가 '완료' 처리한 시각 (null이면 미완료)
+
+    /**
+     * 연동된 Google Calendar 이벤트 ID.
+     *
+     * - 앱 → 구글로 push(addEvent)한 일정: 구글이 돌려준 이벤트 ID 저장
+     * - 구글 → 앱으로 pull(import)한 일정: 가져온 구글 이벤트 ID 저장
+     *
+     * 이 값으로 양방향 동기화 시 같은 일정이 중복 생성되는 것을 막는다.
+     * 순수 로컬 일정(구글 미연동/미동기화)은 null.
+     */
+    @Column(length = 256)
+    private String googleEventId;
 }

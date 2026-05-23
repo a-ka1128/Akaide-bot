@@ -28,6 +28,7 @@ public class ScheduleDto {
     private boolean alert1h;
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
+    private boolean fromGoogle; // 구글 캘린더에서 동기화된 일정인지 (프론트 뱃지 표시용)
 
     public static ScheduleDto from(Schedule s) {
         return ScheduleDto.builder()
@@ -42,6 +43,7 @@ public class ScheduleDto {
                 .alert1h(s.isAlert1h())
                 .completedAt(s.getCompletedAt())
                 .createdAt(s.getCreatedAt())
+                .fromGoogle(s.getGoogleEventId() != null)
                 .build();
     }
 }

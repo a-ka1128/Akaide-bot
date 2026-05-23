@@ -3,6 +3,7 @@ package com.akaide.bot.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.akaide.bot.domain.TokenUsage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -15,8 +16,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class GeminiService {
+
+    // gemini-2.5-flash 는 v1beta 엔드포인트에서 안정적으로 제공된다.
+    private static final String GEMINI_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=";
 
     @Value("${gemini.api.key}")
     private String apiKey;
@@ -30,7 +36,7 @@ public class GeminiService {
     }
 
     public String analyzeMessage(String userMessage) {
-        String url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+        String url = GEMINI_URL + apiKey;
         String currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
         // 프롬프트는 동일하게 유지
@@ -79,10 +85,10 @@ public class GeminiService {
             return extractJson(extractedText);
 
         } catch (HttpStatusCodeException e) {
-            System.err.println("🔴 API 에러: " + e.getResponseBodyAsString());
+            log.error("🔴 Gemini API 에러: {}", e.getResponseBodyAsString());
             return "{\"task\": \"error\", \"message\": \"API 호출 실패\"}";
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("🔴 Gemini 응답 분석 실패", e);
             return "{\"task\": \"error\", \"message\": \"응답 분석 실패\"}";
         }
     }
@@ -93,7 +99,7 @@ public class GeminiService {
      * 변경할 필드만 채우고 나머지는 null로 둡니다.
      */
     public String analyzeEditInstruction(String currentTask, LocalDateTime currentTime, String userInstruction) {
-        String url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+        String url = GEMINI_URL + apiKey;
         String currentTimeStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         String currentScheduleStr = (currentTime != null) ? currentTime.toString() : "(없음)";
 
@@ -135,7 +141,7 @@ public class GeminiService {
                     .path("text").asText("");
             return extractJson(text);
         } catch (Exception e) {
-            System.err.println("⚠️ 수정 분석 실패: " + e.getMessage());
+            log.warn("⚠️ 수정 분석 실패: {}", e.getMessage());
             return "{\"error\": \"unknown\"}";
         }
     }
@@ -145,7 +151,7 @@ public class GeminiService {
      * 실패 시 빈 문자열을 반환해서 호출부에서 안전하게 처리할 수 있게 합니다.
      */
     public String generateFreeTimeRecommendation(String freeSlotsSummary) {
-        String url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+        String url = GEMINI_URL + apiKey;
 
         String prompt = "너는 사용자의 일정 비서 'Akaide'야.\n" +
                 "아래 빈 시간대 정보를 보고, 그 시간에 무엇을 하면 좋을지 따뜻하고 짧은 한 문장(40자 이내)으로 추천해줘.\n" +
@@ -186,7 +192,7 @@ public class GeminiService {
             text = text.replaceAll("^[\"'`*_>\\s]+", "").replaceAll("[\"'`*_\\s]+$", "");
             return text;
         } catch (Exception e) {
-            System.err.println("⚠️ 추천 문구 생성 실패: " + e.getMessage());
+            log.warn("⚠️ 추천 문구 생성 실패: {}", e.getMessage());
             return "";
         }
     }
@@ -214,7 +220,7 @@ public class GeminiService {
      * 추출 실패/이해 불가 시 빈 배열 "[]" 반환.
      */
     public String analyzeBlmsText(String text) {
-        String url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+        String url = GEMINI_URL + apiKey;
         String currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
         String prompt = "너는 한국 대학교 사이버캠퍼스(LMS) 페이지 텍스트에서 " +
@@ -272,7 +278,7 @@ public class GeminiService {
 
             return extractJsonArray(content);
         } catch (Exception e) {
-            System.err.println("⚠️ BLMS 텍스트 분석 실패: " + e.getMessage());
+            log.warn("⚠️ BLMS 텍스트 분석 실패: {}", e.getMessage());
             return "[]";
         }
     }

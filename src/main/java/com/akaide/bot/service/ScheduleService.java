@@ -4,8 +4,11 @@ import com.akaide.bot.domain.ActiveTime;
 import com.akaide.bot.domain.ButtonData;
 import com.akaide.bot.domain.Schedule;
 import com.akaide.bot.domain.TargetChannel;
+import com.akaide.bot.domain.GoogleToken;
 import com.akaide.bot.repository.ActiveTimeRepository;
 import com.akaide.bot.repository.ButtonDataRepository;
+import com.akaide.bot.repository.GoogleTokenRepository;
+import com.akaide.bot.repository.OAuthStateRepository;
 import com.akaide.bot.repository.ScheduleRepository;
 import com.akaide.bot.repository.TargetChannelRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,6 +40,8 @@ public class ScheduleService {
     private final TargetChannelRepository targetChannelRepository;
     private final ActiveTimeRepository activeTimeRepository;
     private final ButtonDataRepository buttonDataRepository;
+    private final OAuthStateRepository oAuthStateRepository;
+    private final GoogleTokenRepository googleTokenRepository;
     private final GoogleCalendarService googleCalendarService;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -47,6 +52,8 @@ public class ScheduleService {
             TargetChannelRepository targetChannelRepository,
             ActiveTimeRepository activeTimeRepository,
             ButtonDataRepository buttonDataRepository,
+            OAuthStateRepository oAuthStateRepository,
+            GoogleTokenRepository googleTokenRepository,
             GoogleCalendarService googleCalendarService,
             GeminiService geminiService,
             @Lazy JDA jda) {
@@ -54,6 +61,8 @@ public class ScheduleService {
         this.targetChannelRepository = targetChannelRepository;
         this.activeTimeRepository = activeTimeRepository;
         this.buttonDataRepository = buttonDataRepository;
+        this.oAuthStateRepository = oAuthStateRepository;
+        this.googleTokenRepository = googleTokenRepository;
         this.googleCalendarService = googleCalendarService;
         this.geminiService = geminiService;
         this.jda = jda;
@@ -96,7 +105,7 @@ public class ScheduleService {
             LocalDateTime newEnd = node.hasNonNull("end") ? LocalDateTime.parse(node.get("end").asText()) : null;
 
             if (newStart != null) {
-                List<Schedule> conflicts = findConflicts(newStart, newEnd);
+                List<Schedule> conflicts = findConflicts(newStart, newEnd, authorId);
                 if (!conflicts.isEmpty()) {
                     String task = node.get("task").asText();
                     String buttonId = UUID.randomUUID().toString();
@@ -137,7 +146,11 @@ public class ScheduleService {
                 .targetTime(data.getStartTime()).build();
 
         scheduleRepository.save(s);
-        googleCalendarService.addEvent(userId, data.getTask(), data.getStartTime(), data.getEndTime());
+        String googleEventId = googleCalendarService.addEvent(userId, data.getTask(), data.getStartTime(), data.getEndTime());
+        if (googleEventId != null) {
+            s.setGoogleEventId(googleEventId);
+            scheduleRepository.save(s);
+        }
         buttonDataRepository.delete(data);
 
         return CompletableFuture.completedFuture(data.getTask());
@@ -159,7 +172,15 @@ public class ScheduleService {
 
         Schedule s = builder.build();
         scheduleRepository.save(s);
-        googleCalendarService.addEvent(authorId, s.getTask(), s.getStartTime() != null ? s.getStartTime() : s.getTargetTime(), s.getEndTime());
+        String googleEventId = googleCalendarService.addEvent(
+                authorId, s.getTask(),
+                s.getStartTime() != null ? s.getStartTime() : s.getTargetTime(),
+                s.getEndTime());
+        if (googleEventId != null) {
+            // push 한 이벤트 ID 를 기록해 두면, 다음 import 때 같은 일정이 중복 생성되지 않는다.
+            s.setGoogleEventId(googleEventId);
+            scheduleRepository.save(s);
+        }
         return s;
     }
 
@@ -170,15 +191,16 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public String analyzeFreeTime(LocalDateTime targetDate, String userId) {
         String dayName = targetDate.getDayOfWeek().name();
-        ActiveTime setting = activeTimeRepository.findById(dayName)
-                .orElse(new ActiveTime(dayName, 9, 23));
+        ActiveTime setting = activeTimeRepository.findByUserIdAndDayOfWeek(userId, dayName)
+                .orElse(new ActiveTime(userId, dayName, 9, 23));
 
         int startH = setting.getStartHour();
         int endH = setting.getEndHour();
 
         List<Event> googleEvents = googleCalendarService.getEventsForDate(userId, targetDate);
-        List<Schedule> dbSchedules = scheduleRepository.findAllByTargetTimeBetween(
-                targetDate.with(LocalTime.MIN), targetDate.with(LocalTime.MAX));
+        // 본인 일정만 점유로 계산 (다른 사용자 일정이 섞이지 않도록)
+        List<Schedule> dbSchedules = scheduleRepository.findAllByUserIdAndTargetTimeBetween(
+                userId, targetDate.with(LocalTime.MIN), targetDate.with(LocalTime.MAX));
 
         boolean[] occupied = new boolean[48];
 
@@ -260,8 +282,8 @@ public class ScheduleService {
     }
 
     @Transactional
-    public void deleteScheduleByKeyword(String keyword) {
-        scheduleRepository.deleteByTaskContaining(keyword);
+    public void deleteScheduleByKeyword(String keyword, String userId) {
+        scheduleRepository.deleteByUserIdAndTaskContaining(userId, keyword);
     }
 
     /**
@@ -272,7 +294,8 @@ public class ScheduleService {
     @Transactional
     public CompletableFuture<String> editScheduleByNaturalLanguage(String keyword, String instruction, String userId) {
         try {
-            List<Schedule> matched = scheduleRepository.findAll().stream()
+            // 본인 일정 중에서만 키워드 매칭 (다른 사용자 일정 수정 방지)
+            List<Schedule> matched = scheduleRepository.findAllByUserIdAndTaskContaining(userId, keyword).stream()
                     .filter(s -> s.getTask() != null && s.getTask().contains(keyword))
                     .sorted((a, b) -> {
                         LocalDateTime ta = a.getTargetTime();
@@ -335,8 +358,8 @@ public class ScheduleService {
     public SmartResult createFromForm(String task, LocalDateTime targetTime,
                                       LocalDateTime endTime, boolean alert24h, boolean alert1h,
                                       String userId) {
-        // 충돌 체크
-        List<Schedule> conflicts = findConflicts(targetTime, endTime);
+        // 충돌 체크 (본인 일정 기준)
+        List<Schedule> conflicts = findConflicts(targetTime, endTime, userId);
         if (!conflicts.isEmpty()) {
             String buttonId = UUID.randomUUID().toString();
             buttonDataRepository.save(ButtonData.builder()
@@ -363,7 +386,11 @@ public class ScheduleService {
                 .alert1h(alert1h)
                 .build();
         scheduleRepository.save(s);
-        googleCalendarService.addEvent(userId, task, targetTime, endTime);
+        String googleEventId = googleCalendarService.addEvent(userId, task, targetTime, endTime);
+        if (googleEventId != null) {
+            s.setGoogleEventId(googleEventId);
+            scheduleRepository.save(s);
+        }
         return SmartResult.success(task);
     }
 
@@ -380,15 +407,16 @@ public class ScheduleService {
     }
 
     /**
-     * 특정 시간대에 다른 일정이 겹치는지 확인.
+     * 특정 시간대에 본인의 다른 일정이 겹치는지 확인.
      * 겹치는 일정 목록을 반환 (없으면 빈 리스트).
+     * userId 로 본인 일정만 대상으로 하여 다른 사용자 일정과의 오탐/정보 노출을 막는다.
      */
     @Transactional(readOnly = true)
-    public List<Schedule> findConflicts(LocalDateTime start, LocalDateTime end) {
+    public List<Schedule> findConflicts(LocalDateTime start, LocalDateTime end, String userId) {
         if (start == null) return List.of();
         LocalDateTime windowStart = start.minusHours(1);
         LocalDateTime windowEnd = (end != null) ? end.plusHours(1) : start.plusHours(2);
-        return scheduleRepository.findAllByTargetTimeBetween(windowStart, windowEnd).stream()
+        return scheduleRepository.findAllByUserIdAndTargetTimeBetween(userId, windowStart, windowEnd).stream()
                 .filter(s -> s.getTargetTime() != null)
                 .filter(s -> {
                     LocalDateTime sEnd = (s.getEndTime() != null) ? s.getEndTime() : s.getTargetTime().plusHours(1);
@@ -400,17 +428,7 @@ public class ScheduleService {
     }
 
     /**
-     * 특정 날짜의 DB 일정 목록 (시간순 정렬은 호출부/임베드에서 처리)
-     */
-    @Transactional(readOnly = true)
-    public List<Schedule> getSchedulesForDate(java.time.LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.atTime(LocalTime.MAX);
-        return scheduleRepository.findAllByTargetTimeBetween(start, end);
-    }
-
-    /**
-     * 특정 사용자의 특정 날짜 일정 목록 (웹 대시보드용)
+     * 특정 사용자의 특정 날짜 일정 목록 (웹 대시보드 / 봇 공용)
      */
     @Transactional(readOnly = true)
     public List<Schedule> getSchedulesForDate(java.time.LocalDate date, String userId) {
@@ -480,7 +498,11 @@ public class ScheduleService {
     public void cleanupOldButtonData() {
         LocalDateTime threshold = LocalDateTime.now().minusDays(1);
         buttonDataRepository.deleteByCreatedAtBefore(threshold);
-        log.info("🧹 오래된 임시 데이터를 청소했습니다. (기준: {} 이전)", threshold);
+        // OAuth state 도 함께 정리 (검증되지 않고 방치된 1회용 토큰 제거)
+        LocalDateTime stateThreshold = LocalDateTime.now().minusMinutes(10);
+        oAuthStateRepository.deleteByCreatedAtBefore(stateThreshold);
+        log.info("🧹 오래된 임시 데이터를 청소했습니다. (버튼 기준: {} 이전, OAuth state 기준: {} 이전)",
+                threshold, stateThreshold);
     }
 
     private boolean checkRepeatMatch(Schedule s, LocalDateTime now) {
@@ -557,5 +579,88 @@ public class ScheduleService {
         if (!stale.isEmpty()) {
             log.info("🧹 만료된 1회성 일정 {}건 정리 완료", stale.size());
         }
+    }
+
+    // =================================================================
+    // 🔄 4. 양방향 동기화 (구글 캘린더 → 앱 import)
+    // =================================================================
+
+    /**
+     * 10분마다 연동된 모든 사용자의 구글 캘린더를 폴링해서,
+     * 앱에 아직 없는 일정을 Schedule 로 가져온다(import).
+     *
+     * 설계 노트:
+     *  - **미래 일정만** 가져온다([now, now+30일]). 과거 일정은 cleanupExpiredSchedules 가
+     *    매일 정리하므로 import 해봤자 다시 지워져 무의미 + 불필요한 중복을 만든다.
+     *  - **googleEventId 로 중복을 막는다.** 앱이 push 한 일정도 같은 ID 를 들고 있으므로
+     *    다시 import 되지 않는다(무한 동기화 방지).
+     *  - 종일(all-day) 이벤트는 dateTime 이 없고 date 만 있으므로 건너뛴다(시간이 없는 일정).
+     *  - import 한 일정은 기본적으로 알림 off 로 둔다(사용자가 원하면 웹에서 켤 수 있음).
+     */
+    @Scheduled(fixedDelay = 600_000L, initialDelay = 60_000L) // 10분 주기, 기동 1분 후 첫 실행
+    @Transactional
+    public void importFromGoogleCalendar() {
+        List<GoogleToken> connectedUsers = googleTokenRepository.findAll();
+        if (connectedUsers.isEmpty()) return;
+
+        LocalDateTime from = LocalDateTime.now();
+        LocalDateTime to = from.plusDays(30);
+        int totalImported = 0;
+
+        for (GoogleToken token : connectedUsers) {
+            String userId = token.getUserId();
+            try {
+                List<Event> events = googleCalendarService.getEventsBetween(userId, from, to);
+                int imported = 0;
+
+                for (Event event : events) {
+                    String googleEventId = event.getId();
+                    if (googleEventId == null) continue;
+
+                    // 이미 알고 있는 이벤트면 건너뜀 (앱이 push 했거나 이전에 import 한 것)
+                    if (scheduleRepository.existsByUserIdAndGoogleEventId(userId, googleEventId)) continue;
+
+                    // 시작/종료 시각 추출 (종일 이벤트는 dateTime 이 null → 제외)
+                    LocalDateTime start = toLocalDateTime(event.getStart());
+                    if (start == null) continue;
+                    LocalDateTime end = toLocalDateTime(event.getEnd());
+
+                    String summary = (event.getSummary() != null && !event.getSummary().isBlank())
+                            ? event.getSummary() : "(제목 없음)";
+
+                    Schedule s = Schedule.builder()
+                            .task(summary)
+                            .userId(userId)
+                            .targetTime(start)
+                            .startTime(start)
+                            .endTime(end)
+                            .alert24h(false)
+                            .alert1h(false)
+                            .googleEventId(googleEventId)
+                            .build();
+                    scheduleRepository.save(s);
+                    imported++;
+                }
+
+                if (imported > 0) {
+                    log.info("🔄 [유저 {}] 구글 캘린더에서 {}건 import 완료", userId, imported);
+                    totalImported += imported;
+                }
+            } catch (Exception e) {
+                // 한 유저에서 실패해도 나머지 유저 동기화는 계속 진행
+                log.error("🔴 [유저 {}] 구글 캘린더 import 중 오류", userId, e);
+            }
+        }
+
+        if (totalImported > 0) {
+            log.info("🔄 양방향 동기화: 총 {}건 import", totalImported);
+        }
+    }
+
+    /** 구글 EventDateTime → LocalDateTime. 종일 이벤트(date만 존재)는 null 반환. */
+    private LocalDateTime toLocalDateTime(com.google.api.services.calendar.model.EventDateTime edt) {
+        if (edt == null || edt.getDateTime() == null) return null;
+        long millis = edt.getDateTime().getValue();
+        return LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(millis), ZoneId.systemDefault());
     }
 }

@@ -185,8 +185,12 @@ public class GoogleCalendarService {
 
     /**
      * 특정 유저의 캘린더에 일정을 등록합니다.
+     *
+     * @return 생성된 구글 이벤트 ID (미연동/실패 시 null).
+     *         호출부는 이 ID를 Schedule.googleEventId 에 저장해두면,
+     *         양방향 동기화 시 같은 일정이 다시 import 되는 것을 막을 수 있다.
      */
-    public void addEvent(String userId, String summary, LocalDateTime startDateTime, LocalDateTime endDateTime) {
+    public String addEvent(String userId, String summary, LocalDateTime startDateTime, LocalDateTime endDateTime) {
         try {
             Calendar service = getCalendarForUser(userId);
 
@@ -199,13 +203,44 @@ public class GoogleCalendarService {
             DateTime end = new DateTime(endDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
             event.setEnd(new EventDateTime().setDateTime(end));
 
-            service.events().insert("primary", event).execute();
+            Event created = service.events().insert("primary", event).execute();
             log.info("📅 [유저 {}] 구글 캘린더 일정 등록 완료: {}", userId, summary);
+            return created.getId();
 
         } catch (UserNotAuthenticatedException e) {
             log.warn("⚠️ [유저 {}] 구글 미연동 상태라 캘린더 등록을 건너뜁니다: {}", userId, e.getMessage());
         } catch (IOException e) {
             log.error("🔴 [유저 {}] 구글 캘린더 API 호출 실패", userId, e);
+        }
+        return null;
+    }
+
+    /**
+     * 특정 유저의 [from, to] 구간 구글 캘린더 일정을 모두 가져옵니다.
+     * 양방향 동기화(구글 → 앱 import)에 사용됩니다.
+     * 토큰이 없거나 오류 시 빈 리스트를 반환해 동기화 배치가 멈추지 않게 합니다.
+     */
+    public List<Event> getEventsBetween(String userId, LocalDateTime from, LocalDateTime to) {
+        try {
+            Calendar service = getCalendarForUser(userId);
+
+            DateTime timeMin = new DateTime(from.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+            DateTime timeMax = new DateTime(to.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+
+            return service.events().list("primary")
+                    .setTimeMin(timeMin)
+                    .setTimeMax(timeMax)
+                    .setOrderBy("startTime")
+                    .setSingleEvents(true)
+                    .execute()
+                    .getItems();
+
+        } catch (UserNotAuthenticatedException e) {
+            log.warn("⚠️ [유저 {}] 구글 미연동 — import 건너뜀.", userId);
+            return Collections.emptyList();
+        } catch (IOException e) {
+            log.error("🔴 [유저 {}] 구글 캘린더 import 조회 실패", userId, e);
+            return Collections.emptyList();
         }
     }
 

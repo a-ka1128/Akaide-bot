@@ -49,11 +49,11 @@ public class FreeTimeController {
         LocalDateTime from = weekStart.atStartOfDay();
         LocalDateTime to = weekEnd.atTime(LocalTime.MAX);
 
-        // 활동 시간 (요일별)
+        // 활동 시간 (본인 요일별)
         Map<String, int[]> activeRange = new LinkedHashMap<>();
         for (DayOfWeek dow : DayOfWeek.values()) {
-            ActiveTime a = activeTimeRepository.findById(dow.name())
-                    .orElse(new ActiveTime(dow.name(), 9, 23));
+            ActiveTime a = activeTimeRepository.findByUserIdAndDayOfWeek(userId, dow.name())
+                    .orElse(new ActiveTime(userId, dow.name(), 9, 23));
             activeRange.put(dow.name(), new int[]{ a.getStartHour(), a.getEndHour() });
         }
 

@@ -7,6 +7,13 @@
 #       (환경변수 DISCORD_BOT_TOKEN, DB_PASSWORD 등을 미리 export)
 # =================================================================
 
+# 리버스 프록시(Caddy) 뒤에서 동작하므로, 프록시가 붙여준
+# X-Forwarded-Proto / X-Forwarded-Host 헤더를 신뢰해 외부 URL(https://api.akaide.site)을
+# 복원한다. 이 설정이 없으면 OAuth redirect_uri 가 http://localhost:8080 으로 만들어져
+# Discord 가 요청을 거부한다("Invalid credentials").
+server:
+  forward-headers-strategy: framework
+
 discord:
   bot:
     token: ${DISCORD_BOT_TOKEN}
