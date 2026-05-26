@@ -96,9 +96,15 @@ public class DiscordBotListener extends ListenerAdapter {
     }
 
     private void sendGoogleAuthLink(SlashCommandInteractionEvent event) {
+        // Discord 슬래시 명령은 3초 안에 첫 응답을 보내야 한다.
+        // getAuthorizationUrl 은 DB 저장(OAuthState)을 포함해 1GB RAM VM 에서 3초를 넘길 수 있어,
+        // 먼저 deferReply 로 "처리 중" 신호를 보내 제한 시간을 15분으로 늘린 뒤
+        // 실제 응답은 hook 으로 보낸다. (그렇지 않으면 10062 Unknown interaction 발생)
+        event.deferReply(true).queue();
         String authUrl = oAuth2Service.getAuthorizationUrl(event.getUser().getId());
-        event.reply("🔗 **Akaide 구글 캘린더 연동**\n아래 링크를 클릭하여 구글 계정에 로그인해 주세요!\n\n" + authUrl)
-                .setEphemeral(true).queue();
+        event.getHook().sendMessage(
+                "🔗 **Akaide 구글 캘린더 연동**\n아래 링크를 클릭하여 구글 계정에 로그인해 주세요!\n\n" + authUrl)
+                .queue();
     }
 
     @Override
