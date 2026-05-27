@@ -1,5 +1,6 @@
 package com.akaide.bot.dto;
 
+import com.akaide.bot.domain.ScheduleCategory;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -18,4 +19,5 @@ public class CreateScheduleRequest {
     private LocalDateTime endTime;     // 선택
     private boolean alert24h;
     private boolean alert1h;
+    private ScheduleCategory category; // 선택 — null 이면 서비스가 OTHER 로 처리
 }

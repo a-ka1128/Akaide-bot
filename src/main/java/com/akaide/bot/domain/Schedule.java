@@ -65,4 +65,16 @@ public class Schedule {
      * 기존 조회·정렬 로직과 호환되게 한다.
      */
     private boolean allDay;
+
+    /**
+     * 일정 카테고리. 캘린더에서 색 구분 + 통계 분류에 사용.
+     *
+     * 사용자가 웹 모달에서 수정 가능. 봇/AI/구글 import 가 만든 일정은 기본값 OTHER 로 저장된다.
+     * DB 에는 enum 이름("SCHOOL", "WORK" ...) 그대로 저장 — ORDINAL 기반 저장은 enum 순서 바꿀 때
+     * 데이터가 어긋나므로 의도적으로 STRING 으로 둔다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    @Builder.Default
+    private ScheduleCategory category = ScheduleCategory.OTHER;
 }

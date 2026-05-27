@@ -1,6 +1,7 @@
 package com.akaide.bot.dto;
 
 import com.akaide.bot.domain.Schedule;
+import com.akaide.bot.domain.ScheduleCategory;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -30,6 +31,7 @@ public class ScheduleDto {
     private LocalDateTime createdAt;
     private boolean fromGoogle; // 구글 캘린더에서 동기화된 일정인지 (프론트 뱃지 표시용)
     private boolean allDay;     // 종일 일정 여부 (프론트가 FullCalendar 에 그대로 전달)
+    private ScheduleCategory category; // 카테고리 — 프론트가 색 매핑에 사용
 
     public static ScheduleDto from(Schedule s) {
         return ScheduleDto.builder()
@@ -46,6 +48,7 @@ public class ScheduleDto {
                 .createdAt(s.getCreatedAt())
                 .fromGoogle(s.getGoogleEventId() != null)
                 .allDay(s.isAllDay())
+                .category(ScheduleCategory.orDefault(s.getCategory()))
                 .build();
     }
 }

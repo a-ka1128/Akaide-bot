@@ -3,6 +3,7 @@ package com.akaide.bot.service;
 import com.akaide.bot.domain.ActiveTime;
 import com.akaide.bot.domain.ButtonData;
 import com.akaide.bot.domain.Schedule;
+import com.akaide.bot.domain.ScheduleCategory;
 import com.akaide.bot.domain.TargetChannel;
 import com.akaide.bot.domain.GoogleToken;
 import com.akaide.bot.repository.ActiveTimeRepository;
@@ -357,7 +358,7 @@ public class ScheduleService {
     @Transactional
     public SmartResult createFromForm(String task, LocalDateTime targetTime,
                                       LocalDateTime endTime, boolean alert24h, boolean alert1h,
-                                      String userId) {
+                                      String userId, ScheduleCategory category) {
         // 충돌 체크 (본인 일정 기준)
         List<Schedule> conflicts = findConflicts(targetTime, endTime, userId);
         if (!conflicts.isEmpty()) {
@@ -384,6 +385,7 @@ public class ScheduleService {
                 .endTime(endTime)
                 .alert24h(alert24h)
                 .alert1h(alert1h)
+                .category(ScheduleCategory.orDefault(category))
                 .build();
         scheduleRepository.save(s);
         String googleEventId = googleCalendarService.addEvent(userId, task, targetTime, endTime);

@@ -135,6 +135,9 @@ public class ScheduleController {
                     if (req.getAlert1h() != null) {
                         s.setAlert1h(req.getAlert1h());
                     }
+                    if (req.getCategory() != null) {
+                        s.setCategory(req.getCategory());
+                    }
                     Schedule saved = scheduleRepository.save(s);
                     return ResponseEntity.ok(ScheduleDto.from(saved));
                 })
@@ -171,7 +174,8 @@ public class ScheduleController {
                 req.getEndTime(),
                 req.isAlert24h(),
                 req.isAlert1h(),
-                userId
+                userId,
+                req.getCategory()
         );
         return ResponseEntity.ok(SmartResultDto.from(result));
     }
