@@ -108,6 +108,20 @@ public class ScheduleController {
                 .orElseGet(() -> ResponseEntity.status(404).body("not_found"));
     }
 
+    /** POST /api/schedules/{id}/uncomplete — 완료 취소 (잘못 누른 경우 원복용) */
+    @PostMapping("/{id}/uncomplete")
+    public ResponseEntity<ScheduleDto> uncomplete(@AuthenticationPrincipal String userId,
+                                                  @PathVariable Long id) {
+        return scheduleRepository.findById(id)
+                .filter(s -> userId.equals(s.getUserId()))
+                .map(s -> {
+                    s.setCompletedAt(null);
+                    Schedule saved = scheduleRepository.save(s);
+                    return ResponseEntity.ok(ScheduleDto.from(saved));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     /** PATCH /api/schedules/{id} — 일정 부분 수정 (본인 일정만) */
     @PatchMapping("/{id}")
     public ResponseEntity<ScheduleDto> update(@AuthenticationPrincipal String userId,
