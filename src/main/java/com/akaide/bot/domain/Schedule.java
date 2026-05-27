@@ -52,4 +52,17 @@ public class Schedule {
      */
     @Column(length = 256)
     private String googleEventId;
+
+    /**
+     * 종일 일정 플래그.
+     *
+     * 구글 캘린더에서 종일로 등록된 이벤트(date만 있고 dateTime 이 없는 케이스)는
+     * true 로 저장한다. 시간 단위 일정과 모델은 같이 쓰되, 다음 두 가지가 달라진다:
+     *   1) 알람 발송 안 함(자정 알람이 사용자에게 의미 없음)
+     *   2) 프론트가 FullCalendar 에 allDay:true 로 넘겨 UI 상 별도 표시
+     *
+     * targetTime/startTime/endTime 은 그날 00:00 / 23:59:59 로 채워서
+     * 기존 조회·정렬 로직과 호환되게 한다.
+     */
+    private boolean allDay;
 }

@@ -29,6 +29,7 @@ public class ScheduleDto {
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
     private boolean fromGoogle; // 구글 캘린더에서 동기화된 일정인지 (프론트 뱃지 표시용)
+    private boolean allDay;     // 종일 일정 여부 (프론트가 FullCalendar 에 그대로 전달)
 
     public static ScheduleDto from(Schedule s) {
         return ScheduleDto.builder()
@@ -44,6 +45,7 @@ public class ScheduleDto {
                 .completedAt(s.getCompletedAt())
                 .createdAt(s.getCreatedAt())
                 .fromGoogle(s.getGoogleEventId() != null)
+                .allDay(s.isAllDay())
                 .build();
     }
 }

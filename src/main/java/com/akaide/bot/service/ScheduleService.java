@@ -454,17 +454,32 @@ public class ScheduleService {
         LocalDateTime now = LocalDateTime.now().withSecond(0).withNano(0);
 
         // ✅ 1) 1회성 일정: '지금', '1시간 후', '24시간 후' 알림이 가능한 범위만 조회
-        //    targetTime이 [now, now + 24h] 사이인 것만 가져오면 충분하다.
+        //    targetTime 이 [now, now + 24h] 사이인 것만 가져오면 충분.
+        //    단, 종일 일정은 "전날 17:00" 알람을 위해 [now, now + 31h] 까지 봐야 한다.
+        //    (오늘 17:00 에 내일 종일 일정의 targetTime=내일 00:00 이 매칭되어야 하므로 약 31h)
         List<Schedule> upcoming = scheduleRepository
-                .findAllByIsRepeatFalseAndTargetTimeBetween(now, now.plusDays(1));
+                .findAllByIsRepeatFalseAndTargetTimeBetween(now, now.plusHours(31));
 
         for (Schedule s : upcoming) {
             if (s.getTargetTime() == null) continue;
 
+            // ── 종일 일정 전용 분기 ──
+            // 종일 일정은 자정에 정시 알람을 보내봐야 의미 없으니 보내지 않고,
+            // 대신 "전날 17:00" 한 번만 알람을 보낸다. notified1h 플래그를 재사용해
+            // 같은 일정에 중복 발송되지 않게 막는다(이 일정에는 1h 알람 로직이 안 쓰이므로 충돌 없음).
+            if (s.isAllDay()) {
+                LocalDateTime alarmAt = s.getTargetTime().minusDays(1).withHour(17).withMinute(0);
+                if (!s.isNotified1h() && alarmAt.isEqual(now)) {
+                    sendNotification(s, "🗓️ **[내일 종일 일정 알림]**");
+                    s.setNotified1h(true);
+                }
+                continue; // 종일 일정은 아래 일반 분기를 타지 않음
+            }
+
             if (s.getTargetTime().isEqual(now)) {
                 // ✅ 완료 버튼을 붙이기 위해 즉시 삭제하지 않음.
-                //    cron이 분 단위라 동일한 targetTime은 한 번만 매칭되므로 중복 알림 걱정 없음.
-                //    완료 처리되지 않은 일정은 cleanupCompletedSchedules가 다음 날 정리함.
+                //    cron 이 분 단위라 동일한 targetTime 은 한 번만 매칭되므로 중복 알림 걱정 없음.
+                //    완료 처리되지 않은 일정은 cleanupCompletedSchedules 가 다음 날 정리함.
                 sendNotificationWithCompleteButton(s, "⏰ **[정시 알림]**");
                 continue;
             }
@@ -480,7 +495,7 @@ public class ScheduleService {
             }
         }
 
-        // ✅ 2) 반복 일정: targetTime은 과거여도 되므로 별도 조회
+        // ✅ 2) 반복 일정: targetTime 은 과거여도 되므로 별도 조회
         List<Schedule> repeats = scheduleRepository.findAllByIsRepeatTrue();
         for (Schedule s : repeats) {
             if (s.getTargetTime() == null) continue;
@@ -604,7 +619,7 @@ public class ScheduleService {
         if (connectedUsers.isEmpty()) return;
 
         LocalDateTime from = LocalDateTime.now();
-        LocalDateTime to = from.plusDays(30);
+        LocalDateTime to = from.plusDays(90); // 앞으로 3개월 분량 import
         int totalImported = 0;
 
         for (GoogleToken token : connectedUsers) {
@@ -620,10 +635,32 @@ public class ScheduleService {
                     // 이미 알고 있는 이벤트면 건너뜀 (앱이 push 했거나 이전에 import 한 것)
                     if (scheduleRepository.existsByUserIdAndGoogleEventId(userId, googleEventId)) continue;
 
-                    // 시작/종료 시각 추출 (종일 이벤트는 dateTime 이 null → 제외)
-                    LocalDateTime start = toLocalDateTime(event.getStart());
-                    if (start == null) continue;
-                    LocalDateTime end = toLocalDateTime(event.getEnd());
+                    // 시간 단위 / 종일 분기.
+                    //   - 시간 일정: start/end 에 dateTime 이 채워져 있음
+                    //   - 종일 일정: start/end 에 date 만 채워져 있음 (dateTime null)
+                    LocalDateTime start;
+                    LocalDateTime end;
+                    boolean allDay;
+
+                    LocalDateTime timed = toLocalDateTime(event.getStart());
+                    if (timed != null) {
+                        start = timed;
+                        end = toLocalDateTime(event.getEnd());
+                        allDay = false;
+                    } else {
+                        java.time.LocalDate startDate = toLocalDate(event.getStart());
+                        if (startDate == null) continue; // 알 수 없는 형식이면 건너뜀
+                        java.time.LocalDate endDate = toLocalDate(event.getEnd());
+
+                        // 구글 종일 이벤트의 end.date 는 "다음날(exclusive)" 이다.
+                        // 예: 5/26 종일 → start.date=5/26, end.date=5/27.
+                        // 화면/조회 호환을 위해 종료 시각은 마지막 날 23:59:59 로.
+                        start = startDate.atStartOfDay();
+                        end = (endDate != null)
+                                ? endDate.minusDays(1).atTime(23, 59, 59)
+                                : startDate.atTime(23, 59, 59);
+                        allDay = true;
+                    }
 
                     String summary = (event.getSummary() != null && !event.getSummary().isBlank())
                             ? event.getSummary() : "(제목 없음)";
@@ -637,6 +674,7 @@ public class ScheduleService {
                             .alert24h(false)
                             .alert1h(false)
                             .googleEventId(googleEventId)
+                            .allDay(allDay)
                             .build();
                     scheduleRepository.save(s);
                     imported++;
@@ -657,10 +695,20 @@ public class ScheduleService {
         }
     }
 
-    /** 구글 EventDateTime → LocalDateTime. 종일 이벤트(date만 존재)는 null 반환. */
+    /** 구글 EventDateTime → LocalDateTime (시간 단위). 종일이면 null. */
     private LocalDateTime toLocalDateTime(com.google.api.services.calendar.model.EventDateTime edt) {
         if (edt == null || edt.getDateTime() == null) return null;
         long millis = edt.getDateTime().getValue();
         return LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(millis), ZoneId.systemDefault());
+    }
+
+    /** 구글 EventDateTime → LocalDate (종일). 시간 단위거나 비어있으면 null. */
+    private java.time.LocalDate toLocalDate(com.google.api.services.calendar.model.EventDateTime edt) {
+        if (edt == null || edt.getDate() == null) return null;
+        // edt.getDate() 는 "yyyy-MM-dd" 형식의 DateTime. toStringRfc3339() 로 안전하게 꺼낸다.
+        String raw = edt.getDate().toStringRfc3339();
+        // 혹시 시간 정보가 붙어 오더라도 앞 10자(날짜)만 사용.
+        if (raw.length() >= 10) raw = raw.substring(0, 10);
+        return java.time.LocalDate.parse(raw);
     }
 }
