@@ -9,11 +9,12 @@ package com.akaide.bot.domain;
  * 새 카테고리를 추가할 일이 생기면 여기와 프론트의 카테고리 메타(category.js)를 같이 수정.
  */
 public enum ScheduleCategory {
-    SCHOOL,   // 학교
-    WORK,     // 작업
-    WOW,      // 월드오브워크래프트
-    HOBBY,    // 취미+약속
-    OTHER;    // 기타 (기본값)
+    SCHOOL,    // 학교
+    WORK,      // 작업
+    WOW,       // 월드오브워크래프트
+    HOBBY,     // 취미+약속
+    BIRTHDAY,  // 생일
+    OTHER;     // 기타 (기본값)
 
     /** null-safe 기본값 fallback */
     public static ScheduleCategory orDefault(ScheduleCategory c) {
